@@ -22,6 +22,7 @@ VALUE cJLogWriter;
 VALUE cJLogReader;
 VALUE eJLog;
 
+static void jlog_populate_subscribers(VALUE);
 
 static void jlog_free(JLog jo) {
    if(jo->ctx) {
@@ -45,7 +46,7 @@ static void jlog_raise(JLog jo, char* mess)
    rb_exc_raise(e);
 }
 
-static VALUE jlog_new2(int argc, VALUE* argv, VALUE class)
+static VALUE jlog_initialize(int argc, VALUE* argv, VALUE self)
 {
    JLog jo;
    int options = O_CREAT;
@@ -87,7 +88,11 @@ static VALUE jlog_new2(int argc, VALUE* argv, VALUE class)
       }
    }
 
-   VALUE tdata = Data_Wrap_Struct(class, 0, jlog_free, jo);
+   VALUE tdata = Data_Wrap_Struct(self, 0, jlog_free, jo);
+   VALUE subscribers = rb_ary_new();
+   rb_iv_set(self, "@subscribers", subscribers);
+   jlog_populate_subscribers(self);
+
 /* Unneeded?
  * VALUE argv[0];
  * ...
@@ -112,6 +117,8 @@ static VALUE jlog_add_subscriber(int argc, VALUE* argv, VALUE self)
       return Qfalse;
    }
 
+   jlog_populate_subscribers(self);
+
    return Qtrue;
 }
 
@@ -120,46 +127,65 @@ static VALUE jlog_remove_subscriber(VALUE self, VALUE subscriber)
 {
    JLog jo;
 
-   Data_Get_Struct(self, JLog, jo);
+   Data_Get_Struct(self, jlog_obj, jo);
 
    if(!jo || !jo->ctx || jlog_ctx_remove_subscriber(jo->ctx, STR2CSTR(subscriber)) != 0)
    {
       return Qfalse;
    }
 
+   jlog_populate_subscribers(self);
+
    return Qtrue;
 }
 
-static VALUE jlog_list_subscribers(VALUE self)
+static void jlog_populate_subscribers(VALUE self)
 {
    char **list;
    int i;
    JLog jo;
+   VALUE subscribers;
 
-   Data_Get_Struct(self, JLog, jo);
+   Data_Get_Struct(self, jlog_obj, jo);
 
    if(!jo || !jo->ctx)
    {
       rb_raise(eJLog, "Invalid jlog context");
    }
 
+   subscribers = rb_iv_get(self, "@subscribers");
+
    jlog_ctx_list_subscribers(jo->ctx, &list);
    for(i=0; list[i]; i++ ) {
-         /* XXX push it onto a list and return it */
+      rb_ary_push(subscribers, rb_str_new2(list[i]));
    }
-
    jlog_ctx_list_subscribers_dispose(jo->ctx, list);
-
-   return Qnil;
 }
 
+static VALUE jlog_list_subscribers(VALUE self)
+{
+   JLog jo;
+   VALUE subscribers;
+
+   Data_Get_Struct(self, jlog_obj, jo);
+
+   if(!jo || !jo->ctx)
+   {
+      rb_raise(eJLog, "Invalid jlog context");
+   }
+
+   subscribers = rb_iv_get(self, "@subscribers");
+
+
+   return subscribers;
+}
 
 static VALUE jlog_raw_size2(VALUE self)
 {
    size_t size;
    JLog jo;
 
-   Data_Get_Struct(self, JLog, jo);
+   Data_Get_Struct(self, jlog_obj, jo);
 
    if(!jo || !jo->ctx) {
       rb_raise(eJLog, "Invalid jlog context");
@@ -173,7 +199,7 @@ static VALUE jlog_close(VALUE self)
 {
    JLog jo;
 
-   Data_Get_Struct(self, JLog, jo);
+   Data_Get_Struct(self, jlog_obj, jo);
 
    if(!jo || !jo->ctx) return Qnil;
 
@@ -187,7 +213,7 @@ static VALUE jlog_inspect(VALUE self)
 {
    JLog jo;
 
-   Data_Get_Struct(self, JLog, jo);
+   Data_Get_Struct(self, jlog_obj, jo);
 
    if(!jo || !jo->ctx) return Qnil;
 
@@ -200,7 +226,7 @@ static VALUE jlog_destroy(VALUE self)
 {
    JLog jo;
 
-   Data_Get_Struct(self, JLog, jo);
+   Data_Get_Struct(self, jlog_obj, jo);
 
    if(!jo) return Qnil;
 
@@ -213,7 +239,7 @@ static VALUE jlog_w_open(VALUE self)
 {
    JLog jo;
 
-   Data_Get_Struct(self, JLog, jo);
+   Data_Get_Struct(self, jlog_obj, jo);
 
    if(!jo || !jo->ctx) {
       rb_raise(eJLog, "Invalid jlog context");
@@ -235,7 +261,7 @@ static VALUE jlog_w_write(int argc, VALUE *argv, VALUE self)
    long buffer_len;
    JLog jo;
 
-   Data_Get_Struct(self, JLog, jo);
+   Data_Get_Struct(self, jlog_obj, jo);
 
    if(!jo || !jo->ctx) {
       rb_raise(eJLog, "Invalid jlog context");
@@ -263,7 +289,7 @@ static VALUE jlog_r_open(VALUE self, VALUE subscriber)
 {
    JLog jo;
 
-   Data_Get_Struct(self, JLog, jo);
+   Data_Get_Struct(self, jlog_obj, jo);
 
    if(!jo || !jo->ctx) {
       rb_raise(eJLog, "Invalid jlog context");
@@ -285,7 +311,7 @@ static VALUE jlog_r_read(VALUE self)
    int cnt;
    JLog jo;
 
-   Data_Get_Struct(self, JLog, jo);
+   Data_Get_Struct(self, jlog_obj, jo);
 
    if(!jo || !jo->ctx) {
       rb_raise(eJLog, "Invalid jlog context");
@@ -360,7 +386,7 @@ static VALUE jlog_r_rewind(VALUE self)
 {
    JLog jo;
 
-   Data_Get_Struct(self, JLog, jo);
+   Data_Get_Struct(self, jlog_obj, jo);
 
    if(!jo || !jo->ctx) {
       rb_raise(eJLog, "Invalid jlog context");
@@ -377,7 +403,7 @@ static VALUE jlog_r_checkpoint(VALUE self)
    jlog_id epoch = { 0, 0 };
    JLog jo;
 
-   Data_Get_Struct(self, JLog, jo);
+   Data_Get_Struct(self, jlog_obj, jo);
 
    if(!jo || !jo->ctx) {
       rb_raise(eJLog, "Invalid jlog context");
@@ -401,7 +427,7 @@ static VALUE jlog_r_auto_checkpoint(int argc, VALUE *argv, VALUE self)
 {
    JLog jo;
 
-   Data_Get_Struct(self, JLog, jo);
+   Data_Get_Struct(self, jlog_obj, jo);
 
    if(!jo || !jo->ctx) {
       rb_raise(eJLog, "Invalid jlog context");
@@ -428,10 +454,7 @@ void Init_jlog(void) {
    rb_define_global_const("JLogWriter", cJLogWriter);
    rb_define_global_const("JLogError", eJLog);
 
-   /* 
-    * Get rid of this, and replace it with an alloc and an initialize call
-    */
-   rb_define_singleton_method(cJLog, "new", jlog_new2, -1);
+   rb_define_method(cJLog, "initialize", jlog_initialize, -1);
 
    rb_define_method(cJLog, "add_subscriber", jlog_add_subscriber, -1);
    rb_define_method(cJLog, "remove_subscriber", jlog_remove_subscriber, 1);
