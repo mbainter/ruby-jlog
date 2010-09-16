@@ -428,6 +428,9 @@ void Init_jlog(void) {
    rb_define_global_const("JLogWriter", cJLogWriter);
    rb_define_global_const("JLogError", eJLog);
 
+   /* 
+    * Get rid of this, and replace it with an alloc and an initialize call
+    */
    rb_define_singleton_method(cJLog, "new", jlog_new2, -1);
 
    rb_define_method(cJLog, "add_subscriber", jlog_add_subscriber, -1);
@@ -445,9 +448,9 @@ void Init_jlog(void) {
 
    rb_define_method(cJLogReader, "open", jlog_r_open, 1);
    rb_define_method(cJLogReader, "read", jlog_r_read, 0);
-   rb_define_method(cJLogReader, "read", jlog_r_rewind, 0);
-   rb_define_method(cJLogReader, "read", jlog_r_checkpoint, 0);
-   rb_define_method(cJLogReader, "read", jlog_r_auto_checkpoint, 0);
+   rb_define_method(cJLogReader, "rewind", jlog_r_rewind, 0);
+   rb_define_method(cJLogReader, "checkpoint", jlog_r_checkpoint, 0);
+   rb_define_method(cJLogReader, "auto_checkpoint", jlog_r_auto_checkpoint, 0);
 }
 
 
