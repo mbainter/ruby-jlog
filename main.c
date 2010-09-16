@@ -471,9 +471,11 @@ void Init_jlog(void) {
 
    rb_define_alias(cJLog, "size", "raw_size");
 
+   rb_define_singleton_method(cJLogWriter, "new", rJLog_new, -1);
    rb_define_method(cJLogWriter, "open", rJLog_W_open, 0);
    rb_define_method(cJLogWriter, "write", rJLog_W_write, -1);
 
+   rb_define_singleton_method(cJLogReader, "new", rJLog_new, -1);
    rb_define_method(cJLogReader, "open", rJLog_R_open, 1);
    rb_define_method(cJLogReader, "read", rJLog_R_read, 0);
    rb_define_method(cJLogReader, "rewind", rJLog_R_rewind, 0);
