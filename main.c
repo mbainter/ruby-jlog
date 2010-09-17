@@ -56,17 +56,22 @@ VALUE rJLog_new(int argc, VALUE* argv, VALUE klass) {
    int options = O_CREAT;
    JLog jo = ALLOC(jlog_obj);
    char *path = STR2CSTR(argv[0]);
+   jlog_id zeroed = {0,0};
 
    jo->ctx = jlog_new(path);
    jo->path = strdup(path);
    jo->auto_checkpoint = 0;
+   jo->start = zeroed;
+   jo->prev = zeroed;
+   jo->last = zeroed;
+   jo->end = zeroed;
 
    if(argc < 1) {
       rb_raise(rb_eArgError, "at least one argument is required (the path)");
    }
 
    if(argc > 2) {
-      options = FIX2INT(argv[2]);
+      options = NUM2INT(argv[2]);
       if(argc > 3) {
          size = NUM2INT(argv[3]);
       }
@@ -139,11 +144,12 @@ VALUE rJLog_remove_subscriber(VALUE self, VALUE subscriber)
    JLog jo;
 
    Data_Get_Struct(self, jlog_obj, jo);
-
-   if(!jo || !jo->ctx || jlog_ctx_remove_subscriber(jo->ctx, STR2CSTR(subscriber)) != 0)
+   int res = jlog_ctx_remove_subscriber(jo->ctx, STR2CSTR(subscriber));
+   if(!jo || !jo->ctx || res != 0)
    {
+      fprintf(stderr, "\nResult of remove command is %d\n", res);
       //rb_raise(eJLog, "FAILED");
-      return subscriber;
+      return res;
    }
 
    rJLog_populate_subscribers(self);
@@ -318,7 +324,7 @@ VALUE rJLog_R_open(VALUE self, VALUE subscriber)
 VALUE rJLog_R_read(VALUE self)
 {
    const jlog_id epoch = {0, 0};
-   jlog_id cur;
+   jlog_id cur = {0, 0};
    jlog_message message;
    int cnt;
    JLog_Reader jo;
