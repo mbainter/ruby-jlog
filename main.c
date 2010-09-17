@@ -55,11 +55,16 @@ VALUE rJLog_new(int argc, VALUE* argv, VALUE klass) {
 
    jo->ctx = jlog_new(path);
    jo->path = strdup(path);
+   jo->auto_checkpoint = 0;
 
-   if(argc > 3) {
-      options = FIX2INT(argv[3]);
-      if(argc > 4) {
-         size = NUM2INT(argv[4]);
+   if(argc < 1) {
+      rb_raise(rb_eArgError, "at least one argument is required (the path)");
+   }
+
+   if(argc > 2) {
+      options = FIX2INT(argv[2]);
+      if(argc > 3) {
+         size = NUM2INT(argv[3]);
       }
    }
    
@@ -87,23 +92,21 @@ VALUE rJLog_new(int argc, VALUE* argv, VALUE klass) {
       }
    }
 
-   rjlog = Data_Wrap_Struct(cJLog, 0, rJLog_free, jo);
+   rjlog = Data_Wrap_Struct(klass, 0, rJLog_free, jo);
    rb_obj_call_init(rjlog, argc, argv);
 
    return rjlog;
 }
 
-static VALUE rJLog_initialize(VALUE self)
+static VALUE rJLog_initialize(int argc, VALUE* argv, VALUE klass)
 {
    JLog jo;
 
-   Data_Get_Struct(self, jlog_obj, jo);
+   Data_Get_Struct(klass, jlog_obj, jo);
 
-   VALUE subscribers = rb_ary_new();
-   rb_iv_set(self, "@subscribers", subscribers);
-   rJLog_populate_subscribers(self);
+   rJLog_populate_subscribers(klass);
 
-   return self;
+   return klass;
 }
 
 VALUE rJLog_add_subscriber(int argc, VALUE* argv, VALUE self)
@@ -135,7 +138,8 @@ VALUE rJLog_remove_subscriber(VALUE self, VALUE subscriber)
 
    if(!jo || !jo->ctx || jlog_ctx_remove_subscriber(jo->ctx, STR2CSTR(subscriber)) != 0)
    {
-      return Qfalse;
+      //rb_raise(eJLog, "FAILED");
+      return subscriber;
    }
 
    rJLog_populate_subscribers(self);
@@ -148,7 +152,7 @@ void rJLog_populate_subscribers(VALUE self)
    char **list;
    int i;
    JLog jo;
-   VALUE subscribers;
+   VALUE subscribers = rb_ary_new();
 
    Data_Get_Struct(self, jlog_obj, jo);
 
@@ -157,13 +161,13 @@ void rJLog_populate_subscribers(VALUE self)
       rb_raise(eJLog, "Invalid jlog context");
    }
 
-   subscribers = rb_iv_get(self, "@subscribers");
-
    jlog_ctx_list_subscribers(jo->ctx, &list);
    for(i=0; list[i]; i++ ) {
       rb_ary_push(subscribers, rb_str_new2(list[i]));
    }
    jlog_ctx_list_subscribers_dispose(jo->ctx, list);
+
+   rb_iv_set(self, "@subscribers", subscribers);
 }
 
 VALUE rJLog_list_subscribers(VALUE self)
@@ -221,7 +225,7 @@ VALUE rJLog_inspect(VALUE self)
 
    if(!jo || !jo->ctx) return Qnil;
 
-   /* XXX Fill in inspect call data */
+   // XXX Fill in inspect call data 
 
    return Qtrue;
 }
@@ -241,7 +245,7 @@ VALUE rJLog_destroy(VALUE self)
 
 VALUE rJLog_W_open(VALUE self)
 {
-   JLog jo;
+   JLog_Writer jo;
 
    Data_Get_Struct(self, jlog_obj, jo);
 
@@ -263,7 +267,7 @@ VALUE rJLog_W_write(int argc, VALUE *argv, VALUE self)
    jlog_message m;
    struct timeval t;
    long buffer_len;
-   JLog jo;
+   JLog_Writer jo;
 
    Data_Get_Struct(self, jlog_obj, jo);
 
@@ -291,7 +295,7 @@ VALUE rJLog_W_write(int argc, VALUE *argv, VALUE self)
 
 VALUE rJLog_R_open(VALUE self, VALUE subscriber)
 {
-   JLog jo;
+   JLog_Reader jo;
 
    Data_Get_Struct(self, jlog_obj, jo);
 
@@ -313,7 +317,7 @@ VALUE rJLog_R_read(VALUE self)
    jlog_id cur;
    jlog_message message;
    int cnt;
-   JLog jo;
+   JLog_Reader jo;
 
    Data_Get_Struct(self, jlog_obj, jo);
 
@@ -378,17 +382,18 @@ VALUE rJLog_R_read(VALUE self)
       jo->last = cur;
    }
 
+   return rb_str_new2(message.mess);
    /* XXX
     * ruby_array = [message.mess, message.mess_len]
     * return ruby_array
-    */
    return Qnil;
+    */
 }
 
 
 VALUE rJLog_R_rewind(VALUE self)
 {
-   JLog jo;
+   JLog_Reader jo;
 
    Data_Get_Struct(self, jlog_obj, jo);
 
@@ -405,7 +410,7 @@ VALUE rJLog_R_rewind(VALUE self)
 VALUE rJLog_R_checkpoint(VALUE self)
 {
    jlog_id epoch = { 0, 0 };
-   JLog jo;
+   JLog_Reader jo;
 
    Data_Get_Struct(self, jlog_obj, jo);
 
@@ -437,45 +442,43 @@ VALUE rJLog_R_auto_checkpoint(int argc, VALUE *argv, VALUE self)
       rb_raise(eJLog, "Invalid jlog context");
    }
 
-   if(argc > 1) {
-      int ac = argv[1];
-      jo->auto_checkpoint = !!ac;
+   if(argc > 0) {
+      int ac = FIX2INT(argv[0]);
+      jo->auto_checkpoint = ac;
    }
 
    return INT2FIX(jo->auto_checkpoint);
 }
 
 
-
 void Init_jlog(void) {
    cJLog = rb_define_class("JLog", rb_cObject);
-   cJLogWriter = rb_define_class_under(cJLog, "Writer", rb_cObject);
-   cJLogReader = rb_define_class_under(cJLog, "Reader", rb_cObject);
+   cJLogWriter = rb_define_class_under(cJLog, "Writer", cJLog);
+   cJLogReader = rb_define_class_under(cJLog, "Reader", cJLog);
 
    eJLog = rb_define_class_under(cJLog, "Error", rb_eStandardError);
 
-   rb_define_global_const("JLogReader", cJLogReader);
-   rb_define_global_const("JLogWriter", cJLogWriter);
-   rb_define_global_const("JLogError", eJLog);
-
    rb_define_singleton_method(cJLog, "new", rJLog_new, -1);
-   rb_define_method(cJLog, "initialize", rJLog_initialize, 1);
+   rb_define_method(cJLog, "initialize", rJLog_initialize, -1);
 
    rb_define_method(cJLog, "add_subscriber", rJLog_add_subscriber, -1);
    rb_define_method(cJLog, "remove_subscriber", rJLog_remove_subscriber, 1);
    rb_define_method(cJLog, "list_subscribers", rJLog_list_subscribers, 0);
-   rb_define_method(cJLog, "raw_size", rJLog_raw_size, 1);
+   rb_define_method(cJLog, "raw_size", rJLog_raw_size, 0);
    rb_define_method(cJLog, "close", rJLog_close, 0);
+
    rb_define_method(cJLog, "destroy", rJLog_destroy, 0);
    rb_define_method(cJLog, "inspect", rJLog_inspect, 0);
 
    rb_define_alias(cJLog, "size", "raw_size");
 
    rb_define_singleton_method(cJLogWriter, "new", rJLog_new, -1);
+   rb_define_method(cJLogWriter, "initialize", rJLog_initialize, -1);
    rb_define_method(cJLogWriter, "open", rJLog_W_open, 0);
    rb_define_method(cJLogWriter, "write", rJLog_W_write, -1);
 
    rb_define_singleton_method(cJLogReader, "new", rJLog_new, -1);
+   rb_define_method(cJLogReader, "initialize", rJLog_initialize, -1);
    rb_define_method(cJLogReader, "open", rJLog_R_open, 1);
    rb_define_method(cJLogReader, "read", rJLog_R_read, 0);
    rb_define_method(cJLogReader, "rewind", rJLog_R_rewind, 0);
@@ -489,14 +492,3 @@ void Init_jlog(void) {
  * jlog_ctx_err(p->ctx), jlog_ctx_err_string(p->ctx), jlog_ctx_errno(p->ctx), strerror(jlog_ctx_errno(j->ctx))
 */
 
-/*
-rb_define_class_under(cJLog, *[define class args])
-
-   
-void  	rb_define_method(VALUE classmod, char *name, VALUE(*func)(), int argc")
-  	Defines an instance method in the class or module classmod with the given name, implemented by the C function func and taking argc arguments.
-void  	rb_define_module_function(VALUE classmod, char *name, VALUE(*func)(), int argc)")
-  	Defines a method in class classmod with the given name, implemented by the C function func and taking argc arguments.
-void  	rb_define_global_function(char *name, VALUE(*func)(), int argc")
-  	Defines a global function (a private method of Kernel) with the given name, implemented by the C function func and taking argc arguments.
-   */
