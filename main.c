@@ -1,6 +1,7 @@
 #include "ruby.h"
 #include "jlog.h"
 #include "fcntl.h"
+#include <stdio.h>
 
 typedef struct {
    jlog_ctx *ctx;
@@ -43,7 +44,10 @@ void rJLog_raise(JLog jo, char* mess)
    rb_iv_set(e, "errstr", rb_str_new2(jlog_ctx_err_string(jo->ctx)));
    rb_iv_set(e, "errno", INT2FIX(jlog_ctx_errno(jo->ctx)));
 
-   rb_exc_raise(e);
+   rb_raise(eJLog, "%s: %d %s", mess, jlog_ctx_err(jo->ctx),
+                               jlog_ctx_err_string(jo->ctx));
+
+   //rb_exc_raise(e);
 }
 
 VALUE rJLog_new(int argc, VALUE* argv, VALUE klass) {
@@ -360,6 +364,7 @@ VALUE rJLog_R_read(VALUE self)
    if(jlog_ctx_read_message(jo->ctx, &cur, &message) != 0) {
       if(jlog_ctx_err(jo->ctx) == JLOG_ERR_FILE_OPEN) {
          jo->error = 1;
+         rJLog_raise(jo, "jlog_ctx_read_message failed");
          return Qnil;
       }
 
@@ -383,11 +388,6 @@ VALUE rJLog_R_read(VALUE self)
    }
 
    return rb_str_new2(message.mess);
-   /* XXX
-    * ruby_array = [message.mess, message.mess_len]
-    * return ruby_array
-   return Qnil;
-    */
 }
 
 
