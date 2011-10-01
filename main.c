@@ -2,6 +2,7 @@
 #include "jlog.h"
 #include "fcntl.h"
 #include <stdio.h>
+#include <sys/time.h>
 
 typedef struct {
    jlog_ctx *ctx;
@@ -284,12 +285,14 @@ VALUE rJLog_W_open(VALUE self)
 {
    JLog_Writer jo;
 
+   rb_warn("(W_open) Get and check context...");
    Data_Get_Struct(self, jlog_obj, jo);
 
    if(!jo || !jo->ctx) {
       rb_raise(eJLog, "Invalid jlog context");
    }
 
+   rb_warn("(W_open) Opening jlog for write.");
    if(jlog_ctx_open_writer(jo->ctx) != 0) {
       rJLog_raise(jo, "jlog_ctx_open_writer failed");
    }
@@ -297,13 +300,17 @@ VALUE rJLog_W_open(VALUE self)
    return Qtrue;
 }
 
-VALUE rJLog_W_write(int argc, VALUE *argv, VALUE self)
+//VALUE rJLog_W_write(int argc, VALUE *argv, VALUE self)
+VALUE rJLog_W_write(VALUE self, VALUE msg)
 {
-   char *buffer;
-   int ts = 0;
-   jlog_message m;
-   struct timeval t;
+//   VALUE msg;
+//   VALUE ts;
+   int err;
+//   jlog_message m;
+//   struct timeval t;
    JLog_Writer jo;
+
+//   rb_scan_args(argc, argv, "10", &msg, &ts);
 
    Data_Get_Struct(self, jlog_obj, jo);
 
@@ -311,19 +318,31 @@ VALUE rJLog_W_write(int argc, VALUE *argv, VALUE self)
       rb_raise(eJLog, "Invalid jlog context");
    }
 
-   if(argc > 3) {
-      ts = (time_t) NUM2INT(argv[3]);
+#if !defined(RSTRING_LEN)
+#  define RSTRING_LEN(x) (RSTRING(x)->len)
+#endif
+/*
+   if(!NIL_P(ts)) {
+      t.tv_sec = (time_t) NUM2INT(ts);
+      t.tv_usec = 0;
+   } else {
+      gettimeofday(&t, NULL);
    }
 
-   buffer = StringValuePtr(argv[0]);
-   m.mess = buffer;
-   m.mess_len = RSTRING(argv[0])->len;
-   t.tv_sec = ts;
-   t.tv_usec = 0;
+   m.mess = StringValuePtr(msg);
+   m.mess_len = RSTRING_LEN(msg);
 
-   if(jlog_ctx_write_message(jo->ctx, &m, ts ? &t : NULL) < 0) {
+   //XXX Implement write_message as an optional call if ts is not nil
+   //if((err = jlog_ctx_write_message(jo->ctx, &m, ts ? &t : NULL)) < 0) {
+*/
+   rb_warn("1");
+   err = jlog_ctx_write(jo->ctx, StringValuePtr(msg), (size_t) RSTRING_LEN(msg));
+   rb_warn("2");
+   if(err != 0) {
+      rb_warn("(JW::write) write failed (%d) %s!", jlog_ctx_err(jo->ctx), jlog_ctx_err_string(jo->ctx));
       return Qfalse;
    } else {
+      rb_warn("(JW::write) wrote %s!", (char *) StringValuePtr(msg));
       return Qtrue;
    }
 }
@@ -332,6 +351,7 @@ VALUE rJLog_W_write(int argc, VALUE *argv, VALUE self)
 VALUE rJLog_R_open(VALUE self, VALUE subscriber)
 {
    JLog_Reader jo;
+   int err;
 
    Data_Get_Struct(self, jlog_obj, jo);
 
@@ -339,7 +359,11 @@ VALUE rJLog_R_open(VALUE self, VALUE subscriber)
       rb_raise(eJLog, "Invalid jlog context");
    }
 
-   if(jlog_ctx_open_reader(jo->ctx, StringValuePtr(subscriber)) != 0) {
+   rb_warn("(JR::open) Opening %s", (char *) StringValuePtr(subscriber));
+   err = jlog_ctx_open_reader(jo->ctx, StringValuePtr(subscriber));
+
+   if(err != 0) {
+      rb_warn("(JR::open) open failed (%d) %s!", jlog_ctx_err(jo->ctx), jlog_ctx_err_string(jo->ctx));
       rJLog_raise(jo, "jlog_ctx_open_reader failed");
    }
 
@@ -361,6 +385,7 @@ VALUE rJLog_R_read(VALUE self)
       rb_raise(eJLog, "Invalid jlog context");
    }
 
+   rb_warn("(JR::read) Check start");
    // If start is unset, read the interval
    if(jo->error || !memcmp(&jo->start, &epoch, sizeof(jlog_id)))
    {
@@ -375,6 +400,7 @@ VALUE rJLog_R_read(VALUE self)
          rJLog_raise(jo, "jlog_ctx_read_interval_failed");
    }
 
+   rb_warn("(JR::read) Check last");
    // If last is unset, start at the beginning
    if(!memcmp(&jo->last, &epoch, sizeof(jlog_id))) {
       cur = jo->start;
@@ -393,6 +419,8 @@ VALUE rJLog_R_read(VALUE self)
             return Qnil;
       }
    }
+
+   rb_warn("(JR::read) Read Message");
    if(jlog_ctx_read_message(jo->ctx, &cur, &message) != 0) {
       if(jlog_ctx_err(jo->ctx) == JLOG_ERR_FILE_OPEN) {
          jo->error = 1;
@@ -404,6 +432,8 @@ VALUE rJLog_R_read(VALUE self)
       jo->error = 1;
       rJLog_raise(jo, "read failed");
    }
+
+   rb_warn("(JR::read) Handle Autocheckpoint");
    if(jo->auto_checkpoint) {
       if(jlog_ctx_read_checkpoint(jo->ctx, &cur) != 0)
          rJLog_raise(jo, "checkpoint failed");
@@ -419,6 +449,7 @@ VALUE rJLog_R_read(VALUE self)
       jo->last = cur;
    }
 
+   rb_warn("(JR::read) Returning: %s", message.mess);
    return rb_str_new2(message.mess);
 }
 
@@ -507,11 +538,16 @@ void Init_jlog(void) {
 
 //   rb_define_singleton_method(cJLogWriter, "new", rJLog_new, -1);
    rb_define_method(cJLogWriter, "initialize", rJLog_initialize, -1);
+   rb_define_alloc_func(cJLogWriter, rJLog_s_alloc);
+
    rb_define_method(cJLogWriter, "open", rJLog_W_open, 0);
-   rb_define_method(cJLogWriter, "write", rJLog_W_write, -1);
+   //rb_define_method(cJLogWriter, "write", rJLog_W_write, -1);
+   rb_define_method(cJLogWriter, "write", rJLog_W_write, 1);
 
 //   rb_define_singleton_method(cJLogReader, "new", rJLog_new, -1);
    rb_define_method(cJLogReader, "initialize", rJLog_initialize, -1);
+   rb_define_alloc_func(cJLogReader, rJLog_s_alloc);
+
    rb_define_method(cJLogReader, "open", rJLog_R_open, 1);
    rb_define_method(cJLogReader, "read", rJLog_R_read, 0);
    rb_define_method(cJLogReader, "rewind", rJLog_R_rewind, 0);

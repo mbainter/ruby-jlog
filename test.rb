@@ -53,6 +53,7 @@ class TC_JLogWriter < Test::Unit::TestCase
 
    def test_Write
       @jwo = JLog::Writer.new("/tmp/junit.log")
+      @jwo.open
       assert_nothing_raised do
          @jwo.write("Test Unit") 
          1.upto(10) do |n| 
@@ -61,9 +62,28 @@ class TC_JLogWriter < Test::Unit::TestCase
       end
       @jwo.close
    end
+
+   def teardown
+      @jro = JLog::Reader.new("/tmp/junit.log")
+      @jro.open("TestSub")
+      @jro.auto_checkpoint(1)
+      while @msg = @jro.read do
+      end
+      @jro.close
+   end
 end
 
 class TC_JLogReader < Test::Unit::TestCase
+   def setup
+      @jwo = JLog::Writer.new("/tmp/junit.log")
+      @jwo.open
+      @jwo.write("Test Unit") 
+      1.upto(10) do |n| 
+         @jwo.write("Test Unit #{n}")
+      end
+      @jwo.close
+   end
+
    def test_Open
       assert_nothing_raised {@jro = JLog::Reader.new("/tmp/junit.log")}
       assert_kind_of(JLog::Reader, @jro, "JLogReader Object creation failed");
@@ -71,22 +91,17 @@ class TC_JLogReader < Test::Unit::TestCase
       assert_nothing_raised {@jro.close}
    end
 
-   def test_Open
-      @jro = JLog::Reader.new("/tmp/junit.log")
-      assert_nothing_raised { @jro.open("TestSub") }
-      @jro.close
-   end
-
-#These tests are oddly broken
-=begin
    def test_Read_Once
       @jro = JLog::Reader.new("/tmp/junit.log")
       @jro.open("TestSub")
-      assert_equal("Test Unit", @jro.read, "First Log Message does not match")
-      assert_equal("Test Unit", @jro.read, "LogMessage was inappropriately CheckPointed!")
-   #   @jro.close
+      @first = @jro.read
+      @jro.close
+
+      @jro = JLog::Reader.new("/tmp/junit.log")
+      @jro.open("TestSub")
+      assert_equal(@first, @jro.read, "LogMessage was inappropriately CheckPointed!")
+      @jro.close
    end
-=end
 
    def test_Rewind
       @jro = JLog::Reader.new("/tmp/junit.log")
@@ -95,10 +110,9 @@ class TC_JLogReader < Test::Unit::TestCase
       assert_nothing_raised { @jro.rewind }
       @res2 = @jro.read
       assert_equal(@res1, @res2, "Rewound Log Messages do not match")
-   #   @jro.close
+      @jro.close
    end
    
-=begin
    def test_Checkpoint
       @jro = JLog::Reader.new("/tmp/junit.log")
       @jro.open("TestSub")
@@ -109,7 +123,6 @@ class TC_JLogReader < Test::Unit::TestCase
       @jro.checkpoint
       @jro.close
    end
-=end
 
    def test_AutoCheckpoint
       @jro = JLog::Reader.new("/tmp/junit.log")
