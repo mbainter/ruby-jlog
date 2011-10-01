@@ -77,8 +77,8 @@ class TC_JLogReader < Test::Unit::TestCase
       @jro.close
    end
 
-=begin
 #These tests are oddly broken
+=begin
    def test_Read_Once
       @jro = JLog::Reader.new("/tmp/junit.log")
       @jro.open("TestSub")
@@ -86,6 +86,7 @@ class TC_JLogReader < Test::Unit::TestCase
       assert_equal("Test Unit", @jro.read, "LogMessage was inappropriately CheckPointed!")
    #   @jro.close
    end
+=end
 
    def test_Rewind
       @jro = JLog::Reader.new("/tmp/junit.log")
@@ -97,6 +98,7 @@ class TC_JLogReader < Test::Unit::TestCase
    #   @jro.close
    end
    
+=begin
    def test_Checkpoint
       @jro = JLog::Reader.new("/tmp/junit.log")
       @jro.open("TestSub")
